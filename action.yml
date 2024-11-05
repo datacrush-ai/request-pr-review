@@ -1,0 +1,15 @@
+name: "Request PR Review"
+description: "Request pull request review to reviewers periodically"
+inputs:
+  token:
+    description: "github token"
+    required: true
+  slackBotToken:
+    description: "slack bot token for messaging"
+    required: true
+  repoUrl:
+    description: "repository url where action runs"
+    required: true
+runs:
+  using: node12
+  main: index.js

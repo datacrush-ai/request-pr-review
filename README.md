@@ -2,6 +2,8 @@
 
 슬랙으로 PR 리뷰 요청을 보내는 Github Actions
 
+<img src=https://github.com/user-attachments/assets/a61bc6b7-fffb-449e-9c89-483a198d91ad width="500" alt="intro">
+
 ## Usage
 
 1. 메시지 전달을 위해 `SLACK_BOT_TOKEN` 이름의 secret을 세팅하세요.
@@ -21,7 +23,7 @@ on:
     
 jobs:
   cron:
-    runs-on: [self-hosted]
+    runs-on: [ubuntu-latest]
     steps:
       - name: Request PR Review
         uses: naver/request-pr-review@v1.2

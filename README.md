@@ -28,7 +28,7 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
       - name: Request PR Review
-        uses: naver/request-pr-review@v1.2
+        uses: naver/request-pr-review@v1.2.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           slackBotToken: ${{ secrets.SLACK_BOT_TOKEN }}

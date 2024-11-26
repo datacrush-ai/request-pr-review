@@ -210,8 +210,12 @@ const refineToApiUrl = repoUrl => {
 
             core.info(`Fetching reviewers of #${pull.number}...`);
 
-            for (const userInfo of await fetchReviewers(pull.number)) {
-                const user = User.create(await fetchUser(userInfo.url));
+            for (const reviewer of await fetchReviewers(pull.number)) {
+                const userInfo = await fetchUser(reviewer.url);
+
+                core.info(`Creating a user instance for\n${JSON.stringify(userInfo, null, 2)}`);
+
+                const user = User.create(userInfo);
 
                 user.requestReview(pull);
             }

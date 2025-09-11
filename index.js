@@ -1,5 +1,4 @@
-// Request PR Review (team-channel + shared mapping + random Levi tone A/B/C/D)
-// Forked customization to share mapping with notify-pr-review
+// Request PR Review (team-channel + shared mapping + Levi tone with pending/remaining split)
 // Apache-2.0
 
 const core = require('@actions/core');
@@ -79,27 +78,22 @@ function aggregateMentions(items) {
   return Array.from(set).join(' ');
 }
 
-// 리바이 톤 헤더 문구 A/B/C/D 중 하나를 랜덤 선택
+// 리바이 톤 A/B/C/D 중 랜덤
 function pickLeviHeader({ mentions, repoFullName }) {
   const withMention = mentions ? `${mentions} ` : ''; // 멘션이 있으면 앞에 붙임
-
   const variants = [
-    // A
-    `${withMention}${repoFullName} 리뷰 요청 목록이다. 지체하지 말고 바로 확인해라.`,
-    // B
-    `${withMention}${repoFullName} 리뷰가 밀려 있다. 시간 끌면 머지와 릴리스가 늦어진다. 지금 처리해라.`,
-    // C
-    `${withMention}리뷰 요청이다. 빠르게 확인하고 대응하라.`,
-    // D
-    `${withMention}리뷰 요청이다. 게을러지지 마라. 당장 확인해라.`
+    `${withMention}${repoFullName} 리뷰 요청 목록이다. 지체하지 말고 바로 확인해라.`, // A
+    `${withMention}${repoFullName} 리뷰가 밀려 있다. 시간 끌면 머지와 릴리스가 늦어진다. 지금 처리해라.`, // B
+    `${withMention}리뷰 요청이다. 빠르게 확인하고 대응하라.`, // C
+    `${withMention}리뷰 요청이다. 게을러지지 마라. 당장 확인해라.` // D
   ];
-
   const keys = ['A', 'B', 'C', 'D'];
   const idx = Math.floor(Math.random() * variants.length);
   return { headerText: variants[idx], variantKey: keys[idx] };
 }
 
-function buildSlackBlocks(headerText, items) {
+// 공통 블록 빌더
+function buildListBlocks(headerText, items, opts = { withContext: true }) {
   if (items.length === 0) {
     return [
       {
@@ -109,12 +103,7 @@ function buildSlackBlocks(headerText, items) {
     ];
   }
 
-  const blocks = [
-    {
-      type: 'section',
-      text: { type: 'mrkdwn', text: headerText }
-    },
-  ];
+  const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: headerText } }];
 
   for (const it of items) {
     const labelText =
@@ -131,15 +120,17 @@ function buildSlackBlocks(headerText, items) {
     });
   }
 
-  blocks.push({
-    type: 'context',
-    elements: [
-      {
-        type: 'mrkdwn',
-        text: '⚠️ 리뷰를 미루면 머지와 릴리스가 늦어진다. 쓸데없는 변명 말고, 당장 피드백해라.'
-      }
-    ]
-  });
+  if (opts.withContext) {
+    blocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: '⚠️ 리뷰를 미루면 머지와 릴리스가 늦어진다. 쓸데없는 변명 말고, 당장 피드백해라.'
+        }
+      ]
+    });
+  }
 
   return blocks;
 }
@@ -157,32 +148,51 @@ function buildSlackBlocks(headerText, items) {
 
     const prs = await listOpenPRs(owner, repo);
 
+    // items에 requested_count를 같이 넣어 분기 근거로 사용
     const items = prs
       .map((pr) => ({
         number: pr.number,
         title: pr.title,
         url: pr.html_url,
         labels: pr.labels || [],
-        mentions: buildMentionsForPR(pr, map)
+        mentions: buildMentionsForPR(pr, map),
+        requested_count: (pr.requested_reviewers || []).length
       }))
       .sort((a, b) => a.number - b.number);
 
-    // 상단 헤더 문구(리바이 톤 A/B/C/D 랜덤) + 멘션 집계
-    const topMentions = aggregateMentions(items);
-    const { headerText, variantKey } = pickLeviHeader({
-      mentions: topMentions,
-      repoFullName: `${owner}/${repo}`
-    });
-    core.info(`Levi header variant = ${variantKey}`);
+    // 분리: 아직 리뷰 안 끝난 PR(pending) vs 리뷰는 끝났으나 머지 안 된 PR(remaining)
+    const pendingItems = items.filter((it) => it.requested_count > 0);
+    const remainingItems = items.filter((it) => it.requested_count === 0);
 
-    // text(플레인)에도 요약 메시지를 넣어 모바일 푸시 미리보기 개선
-    const textSummary =
-      items.length === 0 ? '리뷰 대기 PR 없음' : headerText;
+    let textSummary = '';
+    let blocks = [];
+
+    if (pendingItems.length > 0) {
+      // 아직 리뷰가 남아있음 → A/B/C/D 랜덤 + 멘션 집계
+      const topMentions = aggregateMentions(pendingItems);
+      const { headerText, variantKey } = pickLeviHeader({
+        mentions: topMentions,
+        repoFullName: `${owner}/${repo}`
+      });
+      core.info(`Levi header (pending) variant = ${variantKey}`);
+      textSummary = headerText;
+      blocks = buildListBlocks(headerText, pendingItems, { withContext: true });
+    } else if (remainingItems.length > 0) {
+      // 리뷰는 끝났으나 머지 안 됨 → 남은 PR만 정리
+      const headerText = `리뷰는 끝났다. 남은 PR을 마무리해라.`;
+      textSummary = headerText;
+      blocks = buildListBlocks(headerText, remainingItems, { withContext: false });
+      // 남은 PR 상황에서는 컨텍스트 경고문은 생략(원하면 true로 바꿔도 됨)
+    } else {
+      // 오픈 PR 자체가 없음
+      textSummary = '리뷰 대기 PR 없음';
+      blocks = buildListBlocks('', [], { withContext: false });
+    }
 
     const res = await slack.post('/chat.postMessage', {
       channel: CHANNEL,
       text: textSummary,
-      blocks: buildSlackBlocks(headerText, items)
+      blocks
     });
     core.info(`Slack response: ${JSON.stringify(res.data)}`);
     if (!res.data?.ok) {
@@ -190,7 +200,7 @@ function buildSlackBlocks(headerText, items) {
     }
 
     core.notice(
-      `Sent request-pr-review for ${owner}/${repo} with ${items.length} items (variant ${variantKey})`
+      `Sent request-pr-review for ${owner}/${repo} (pending=${pendingItems.length}, remaining=${remainingItems.length})`
     );
   } catch (e) {
     core.setFailed(e.message);

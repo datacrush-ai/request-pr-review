@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 /** ===== 팀별 커스텀: 채널명/매핑 파일 경로만 수정 ===== */
-const CHANNEL = '#뷰링고-fe-github';                 // 팀 채널 고정
+const CHANNEL = 'C09EEQM43GW';                 // 팀 채널 ID (또는 '#channel-name')
 const MAP_PATH = '.github/slack-map.json';      // 서비스 리포 내 공유 JSON
 /** =============================================== */
 
@@ -121,6 +121,9 @@ function buildSlackBlocks(repoFullName, items) {
 
 (async () => {
   try {
+    core.info(`Slack channel target = ${CHANNEL}`);
+    core.info(`Has SLACK_BOT_TOKEN = ${!!core.getInput('slackBotToken')}`);
+
     const repoUrl = core.getInput('repoUrl');
     if (!repoUrl) throw new Error('`repoUrl` input is required');
 
@@ -139,11 +142,15 @@ function buildSlackBlocks(repoFullName, items) {
       }))
       .sort((a, b) => a.number - b.number);
 
-    await slack.post('/chat.postMessage', {
+    const res = await slack.post('/chat.postMessage', {
       channel: CHANNEL,
       text: items.length === 0 ? '리뷰 대기 PR 없음' : `리뷰 요청: ${items.length}건`,
       blocks: buildSlackBlocks(`${owner}/${repo}`, items)
     });
+    core.info(`Slack response: ${JSON.stringify(res.data)}`);
+    if (!res.data?.ok) {
+      throw new Error(`Slack error: ${res.data?.error || 'unknown_error'} (channel=${CHANNEL})`);
+    }
 
     core.notice(
       `Sent request-pr-review for ${owner}/${repo} with ${items.length} items`

@@ -114,7 +114,6 @@ function buildSlackBlocks(headerText, items) {
       type: 'section',
       text: { type: 'mrkdwn', text: headerText }
     },
-    { type: 'divider' }
   ];
 
   for (const it of items) {
@@ -132,7 +131,6 @@ function buildSlackBlocks(headerText, items) {
     });
   }
 
-  blocks.push({ type: 'divider' });
   blocks.push({
     type: 'context',
     elements: [

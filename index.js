@@ -1,4 +1,4 @@
-// Request PR Review (team-channel + shared mapping + Levi tone with pending/remaining split)
+// Request PR Review (team-channel + shared mapping + Levi tone with pending/remaining split + morning greeting)
 // Apache-2.0
 
 const core = require('@actions/core');
@@ -26,6 +26,18 @@ const slack = axios.create({
     'Content-Type': 'application/json'
   }
 });
+
+function pickMorningGreeting() {
+  const variants = [
+    '좋은 아침이다. 정신 차려라.',
+    '아침이다. 게을러지지 마라.',
+    '좋은 아침이다. 오늘도 심장을 바쳐라.',
+    '일과는 시작됐다. 바로 움직여라.'
+  ];
+  return variants[Math.floor(Math.random() * variants.length)];
+}
+
+/** ======================== */
 
 function loadSlackMap() {
   try {
@@ -59,13 +71,16 @@ async function listOpenPRs(owner, repo) {
   return prs.filter((pr) => (skipDraft ? !pr.draft : true));
 }
 
+// 매핑 우선, 없으면 GitHub 로그인으로 멘션 시도
 function buildMentionsForPR(pr, map) {
   const reviewers = pr.requested_reviewers || [];
-  const ids = reviewers
-    .map((u) => map[u.login])
-    .filter(Boolean)
-    .map((uid) => `<@${uid}>`);
-  return ids.join(' ');
+  const tags = reviewers.map((u) => {
+    const login = u.login;             // GitHub 아이디
+    const slackId = map[login];        // .github/slack-map.json 에 저장된 Slack UID (UXXXX…)
+    return slackId ? `<@${slackId}>`   // 매핑이 있으면 UID로 정확 멘션
+                   : `<@${login}>`;    // 매핑이 없으면 로그인으로 멘션 시도
+  });
+  return tags.filter(Boolean).join(' ');
 }
 
 // 여러 PR의 멘션을 상단 메시지에 한번만 모아 붙이기
@@ -92,13 +107,15 @@ function pickLeviHeader({ mentions, repoFullName }) {
   return { headerText: variants[idx], variantKey: keys[idx] };
 }
 
-// 공통 블록 빌더
-function buildListBlocks(headerText, items, opts = { withContext: true }) {
+// 공통 블록 빌더 (greetingText 옵션 추가)
+function buildListBlocks(headerText, items, opts = { withContext: true, greetingText: '' }) {
   if (items.length === 0) {
+    const emptyMsg = '✅ 지금은 리뷰할 PR이 없다. 방심하지 마라. 곧 또 생길 거다.';
+    const prefix = opts.greetingText ? `${opts.greetingText}\n` : '';
     return [
       {
         type: 'section',
-        text: { type: 'mrkdwn', text: '✅ 지금은 리뷰할 PR이 없다. 방심하지 마라. 곧 또 생길 거다.' }
+        text: { type: 'mrkdwn', text: `${prefix}${emptyMsg}` }
       }
     ];
   }
@@ -168,25 +185,29 @@ function buildListBlocks(headerText, items, opts = { withContext: true }) {
     let blocks = [];
 
     if (pendingItems.length > 0) {
-      // 아직 리뷰가 남아있음 → A/B/C/D 랜덤 + 멘션 집계
+      // 아직 리뷰가 남아있음 → A/B/C/D 랜덤 + 멘션 집계 + 인사
       const topMentions = aggregateMentions(pendingItems);
       const { headerText, variantKey } = pickLeviHeader({
         mentions: topMentions,
         repoFullName: `${owner}/${repo}`
       });
       core.info(`Levi header (pending) variant = ${variantKey}`);
-      textSummary = headerText;
-      blocks = buildListBlocks(headerText, pendingItems, { withContext: true });
+      const greeting = pickMorningGreeting();
+      const pendingHeader = `${greeting} ${headerText}`;
+      textSummary = pendingHeader;
+      blocks = buildListBlocks(pendingHeader, pendingItems, { withContext: true });
     } else if (remainingItems.length > 0) {
-      // 리뷰는 끝났으나 머지 안 됨 → 남은 PR만 정리
+      // 리뷰는 끝났으나 머지 안 됨 → 남은 PR만 정리 + 인사
+      const greeting = pickMorningGreeting();
       const headerText = `리뷰는 끝났다. 남은 PR을 마무리해라.`;
-      textSummary = headerText;
-      blocks = buildListBlocks(headerText, remainingItems, { withContext: false });
-      // 남은 PR 상황에서는 컨텍스트 경고문은 생략(원하면 true로 바꿔도 됨)
+      const remainingHeader = `${greeting} ${headerText}`;
+      textSummary = remainingHeader;
+      blocks = buildListBlocks(remainingHeader, remainingItems, { withContext: false });
     } else {
-      // 오픈 PR 자체가 없음
-      textSummary = '리뷰 대기 PR 없음';
-      blocks = buildListBlocks('', [], { withContext: false });
+      // 오픈 PR 자체가 없음 → 인사 + 빈 메시지 블록
+      const greeting = pickMorningGreeting();
+      textSummary = `${greeting} 리뷰 대기 PR 없음`;
+      blocks = buildListBlocks('', [], { withContext: false, greetingText: greeting });
     }
 
     const res = await slack.post('/chat.postMessage', {

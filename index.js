@@ -125,13 +125,13 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
   for (const it of items) {
     const labelText =
       (it.labels || []).length > 0
-        ? `\n라벨: ${it.labels.map((l) => `\`${l.name}\``).join(' ')}`
+        ? `${it.labels.map((l) => `\`${l.name}\``).join(' ')}`
         : '';
 
     blocks.push({
-      type: 'section',
+      type: 'actions',
       text: {
-        type: 'mrkdwn',
+        type: 'button',
         text: `• ${it.mentions || ''} <${it.url}|${encodeText(it.title)}>${labelText}`
       }
     });

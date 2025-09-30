@@ -143,7 +143,7 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
             type: 'plain_text',
             text: name,
             emoji: true // 라벨에 이모지가 있다면 표시해줍니다.
-          }
+          },
           ...(name === 'D-0' ? { style: 'danger' } : {})
         }))
       });

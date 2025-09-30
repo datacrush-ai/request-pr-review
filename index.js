@@ -123,12 +123,16 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
   const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: headerText } }];
 
   for (const it of items) {
+    const isUrgent = (it.labels || []).some((l) => l.name === 'D-0');
+    // ===== 👇 수정된 부분: 요청하신 고정 멘트로 변경 =====
+    const urgentText = isUrgent ? ' 🚨 *긴급 PR이다. 지금 처리해라.*' : '';
+
     // 1. 아이템의 제목, 멘션, URL을 'section' 블록으로 추가합니다.
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `• ${it.mentions || ''} <${it.url}|${encodeText(it.title)}>`
+        text: `• ${it.mentions || ''} <${it.url}|${encodeText(it.title)}>${urgentText}`
       }
     });
   
@@ -142,7 +146,7 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
           text: {
             type: 'plain_text',
             text: name,
-            emoji: true // 라벨에 이모지가 있다면 표시해줍니다.
+            emoji: true
           },
           ...(name === 'D-0' ? { style: 'danger' } : {})
         }))

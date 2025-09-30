@@ -123,18 +123,32 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
   const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: headerText } }];
 
   for (const it of items) {
-    const labelText =
-      (it.labels || []).length > 0
-        ? `${it.labels.map((l) => `\`${l.name}\``).join(' ')}`
-        : '';
-
+    // 1. 아이템의 제목, 멘션, URL을 'section' 블록으로 추가합니다.
     blocks.push({
-      type: 'actions',
+      type: 'section',
       text: {
-        type: 'button',
-        text: `• ${it.mentions || ''} <${it.url}|${encodeText(it.title)}>${labelText}`
+        type: 'mrkdwn',
+        text: `• ${it.mentions || ''} <${it.url}|${encodeText(it.title)}>`
       }
     });
+  
+    // 2. 라벨이 있는 경우, 요청하신 형식의 'actions' 블록으로 버튼들을 추가합니다.
+    const labels = it.labels || [];
+    if (labels.length > 0) {
+      blocks.push({
+        type: 'actions',
+        elements: labels.map(({ name }) => ({
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: name,
+            emoji: true // 라벨에 이모지가 있다면 표시해줍니다.
+          }
+          // 예시처럼 특정 라벨에 스타일을 적용할 수 있습니다.
+          // ...(name === 'D0' ? { style: 'danger' } : {})
+        }))
+      });
+    }
   }
 
   if (opts.withContext) {

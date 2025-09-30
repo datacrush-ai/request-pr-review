@@ -144,8 +144,7 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
             text: name,
             emoji: true // 라벨에 이모지가 있다면 표시해줍니다.
           }
-          // 예시처럼 특정 라벨에 스타일을 적용할 수 있습니다.
-          // ...(name === 'D0' ? { style: 'danger' } : {})
+          ...(name === 'D-0' ? { style: 'danger' } : {})
         }))
       });
     }

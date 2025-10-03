@@ -1,4 +1,4 @@
-// Request PR Review (team-channel + shared mapping + Levi tone with pending/remaining split + morning greeting)
+// Request PR Review (team-channel + shared mapping + Levi tone + morning greeting)
 // Apache-2.0
 
 const core = require('@actions/core');
@@ -37,8 +37,6 @@ function pickMorningGreeting() {
   return variants[Math.floor(Math.random() * variants.length)];
 }
 
-/** ======================== */
-
 function loadSlackMap() {
   try {
     const full = path.resolve(process.cwd(), MAP_PATH);
@@ -49,7 +47,6 @@ function loadSlackMap() {
   }
 }
 
-// https://github.com/org/repo → { owner, repo }
 function parseRepoUrl(repoUrl) {
   const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i);
   if (!m) throw new Error(`Invalid repoUrl: ${repoUrl}`);
@@ -71,19 +68,16 @@ async function listOpenPRs(owner, repo) {
   return prs.filter((pr) => (skipDraft ? !pr.draft : true));
 }
 
-// 매핑 우선, 없으면 GitHub 로그인으로 멘션 시도
 function buildMentionsForPR(pr, map) {
   const reviewers = pr.requested_reviewers || [];
   const tags = reviewers.map((u) => {
-    const login = u.login;             // GitHub 아이디
-    const slackId = map[login];        // .github/slack-map.json 에 저장된 Slack UID (UXXXX…)
-    return slackId ? `<@${slackId}>`   // 매핑이 있으면 UID로 정확 멘션
-                   : `<@${login}>`;    // 매핑이 없으면 로그인으로 멘션 시도
+    const login = u.login;
+    const slackId = map[login];
+    return slackId ? `<@${slackId}>` : `<@${login}>`;
   });
   return tags.filter(Boolean).join(' ');
 }
 
-// 여러 PR의 멘션을 상단 메시지에 한번만 모아 붙이기
 function aggregateMentions(items) {
   const set = new Set();
   for (const it of items) {
@@ -93,29 +87,26 @@ function aggregateMentions(items) {
   return Array.from(set).join(' ');
 }
 
-// 리바이 톤 A/B/C/D 중 랜덤
 function pickLeviHeader({ mentions, repoFullName }) {
-  const withMention = mentions ? `${mentions} ` : ''; // 멘션이 있으면 앞에 붙임
+  const withMention = mentions ? `${mentions} ` : '';
   const variants = [
-    `${withMention}${repoFullName} 리뷰 요청 목록이다. 지체하지 말고 바로 확인해라.`, // A
-    `${withMention}${repoFullName} 리뷰가 밀려 있다. 시간 끌면 머지와 릴리스가 늦어진다. 지금 처리해라.`, // B
-    `${withMention}리뷰 요청이다. 빠르게 확인하고 대응하라.`, // C
-    `${withMention}리뷰 요청이다. 게을러지지 마라. 당장 확인해라.` // D
+    `${withMention}${repoFullName} 리뷰 요청 목록이다. 지체하지 말고 바로 확인해라.`,
+    `${withMention}${repoFullName} 리뷰가 밀려 있다. 시간 끌면 머지와 릴리스가 늦어진다. 지금 처리해라.`,
+    `${withMention}리뷰 요청이다. 빠르게 확인하고 대응하라.`,
+    `${withMention}리뷰 요청이다. 게을러지지 마라. 당장 확인해라.`
   ];
   const keys = ['A', 'B', 'C', 'D'];
   const idx = Math.floor(Math.random() * variants.length);
   return { headerText: variants[idx], variantKey: keys[idx] };
 }
 
-// 공통 블록 빌더 (greetingText 옵션 추가)
-function buildListBlocks(headerText, items, opts = { withContext: true, greetingText: '' }) {
+// 모든 PR을 한 메시지에 나열
+function buildAllPRBlocks(headerText, items) {
   if (items.length === 0) {
-    const emptyMsg = '✅ 지금은 리뷰할 PR이 없다. 방심하지 마라. 곧 또 생길 거다.';
-    const prefix = opts.greetingText ? `${opts.greetingText}\n` : '';
     return [
       {
         type: 'section',
-        text: { type: 'mrkdwn', text: `${prefix}${emptyMsg}` }
+        text: { type: 'mrkdwn', text: `✅ 지금은 리뷰할 PR이 없다. 방심하지 마라. 곧 또 생길 거다.` }
       }
     ];
   }
@@ -124,10 +115,8 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
 
   for (const it of items) {
     const isUrgent = (it.labels || []).some((l) => l.name === 'D-0');
-    // ===== 👇 수정된 부분: 요청하신 고정 멘트로 변경 =====
     const urgentText = isUrgent ? ' 🚨 *긴급 PR이다. 지금 처리해라.*' : '';
 
-    // 1. 아이템의 제목, 멘션, URL을 'section' 블록으로 추가합니다.
     blocks.push({
       type: 'section',
       text: {
@@ -135,8 +124,7 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
         text: `• ${it.mentions || ''} <${it.url}|${encodeText(it.title)}>${urgentText}`
       }
     });
-  
-    // 2. 라벨이 있는 경우, 요청하신 형식의 'actions' 블록으로 버튼들을 추가합니다.
+
     const labels = it.labels || [];
     if (labels.length > 0) {
       blocks.push({
@@ -154,17 +142,15 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
     }
   }
 
-  if (opts.withContext) {
-    blocks.push({
-      type: 'context',
-      elements: [
-        {
-          type: 'mrkdwn',
-          text: '⚠️ 리뷰를 미루면 머지와 릴리스가 늦어진다. 쓸데없는 변명 말고, 당장 피드백해라.'
-        }
-      ]
-    });
-  }
+  blocks.push({
+    type: 'context',
+    elements: [
+      {
+        type: 'mrkdwn',
+        text: '⚠️ 리뷰를 미루면 머지와 릴리스가 늦어진다. 쓸데없는 변명 말고, 당장 피드백해라.'
+      }
+    ]
+  });
 
   return blocks;
 }
@@ -182,7 +168,6 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
 
     const prs = await listOpenPRs(owner, repo);
 
-    // items에 requested_count를 같이 넣어 분기 근거로 사용
     const items = prs
       .map((pr) => ({
         number: pr.number,
@@ -194,42 +179,21 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
       }))
       .sort((a, b) => a.number - b.number);
 
-    // 분리: 아직 리뷰 안 끝난 PR(pending) vs 리뷰는 끝났으나 머지 안 된 PR(remaining)
-    const pendingItems = items.filter((it) => it.requested_count > 0);
-    const remainingItems = items.filter((it) => it.requested_count === 0);
+    const topMentions = aggregateMentions(items);
+    const { headerText, variantKey } = pickLeviHeader({
+      mentions: topMentions,
+      repoFullName: `${owner}/${repo}`
+    });
+    core.info(`Levi header variant = ${variantKey}`);
 
-    let textSummary = '';
-    let blocks = [];
+    const greeting = pickMorningGreeting();
+    const header = `${greeting} ${headerText}`;
 
-    if (pendingItems.length > 0) {
-      // 아직 리뷰가 남아있음 → A/B/C/D 랜덤 + 멘션 집계 + 인사
-      const topMentions = aggregateMentions(pendingItems);
-      const { headerText, variantKey } = pickLeviHeader({
-        mentions: topMentions,
-        repoFullName: `${owner}/${repo}`
-      });
-      core.info(`Levi header (pending) variant = ${variantKey}`);
-      const greeting = pickMorningGreeting();
-      const pendingHeader = `${greeting} ${headerText}`;
-      textSummary = pendingHeader;
-      blocks = buildListBlocks(pendingHeader, pendingItems, { withContext: true });
-    } else if (remainingItems.length > 0) {
-      // 리뷰는 끝났으나 머지 안 됨 → 남은 PR만 정리 + 인사
-      const greeting = pickMorningGreeting();
-      const headerText = `리뷰는 끝났다. 남은 PR을 마무리해라.`;
-      const remainingHeader = `${greeting} ${headerText}`;
-      textSummary = remainingHeader;
-      blocks = buildListBlocks(remainingHeader, remainingItems, { withContext: false });
-    } else {
-      // 오픈 PR 자체가 없음 → 인사 + 빈 메시지 블록
-      const greeting = pickMorningGreeting();
-      textSummary = `${greeting} 리뷰 대기 PR 없음`;
-      blocks = buildListBlocks('', [], { withContext: false, greetingText: greeting });
-    }
+    const blocks = buildAllPRBlocks(header, items);
 
     const res = await slack.post('/chat.postMessage', {
       channel: CHANNEL,
-      text: textSummary,
+      text: header,
       blocks
     });
     core.info(`Slack response: ${JSON.stringify(res.data)}`);
@@ -237,9 +201,7 @@ function buildListBlocks(headerText, items, opts = { withContext: true, greeting
       throw new Error(`Slack error: ${res.data?.error || 'unknown_error'} (channel=${CHANNEL})`);
     }
 
-    core.notice(
-      `Sent request-pr-review for ${owner}/${repo} (pending=${pendingItems.length}, remaining=${remainingItems.length})`
-    );
+    core.notice(`Sent request-pr-review for ${owner}/${repo} (count=${items.length})`);
   } catch (e) {
     core.setFailed(e.message);
   }
